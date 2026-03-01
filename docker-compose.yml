@@ -7,10 +7,15 @@ services:
       - "514:514/udp"
       - "8090:8000"
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql/data   # Not needed if using external DB
       - ./maxmind:/app/maxmind
     # If you add real credentials here, do not commit this file.
     environment:
+      # POSTGRES_PASSWORD serves two roles:
+      #   1. Password for the bundled PostgreSQL (when using the built-in DB)
+      #   2. Encryption key for storing UniFi API keys (always required)
+      # When using an external DB, this is only used for #2 — it does NOT
+      # need to match DB_PASSWORD.
       POSTGRES_PASSWORD: "your_strong_password_here"
       ABUSEIPDB_API_KEY: "your_key_here"
       MAXMIND_ACCOUNT_ID: "your_account_id"
@@ -19,8 +24,18 @@ services:
       TZ: "Europe/London"
       UNIFI_API_KEY: "your_unifi_api_key_here"
       UNIFI_HOST: "https://192.168.1.1"
+
+      # ── External PostgreSQL (optional) ─────────────────────────────
+      # Uncomment and set these to use your own PostgreSQL instance.
+      # The bundled database is automatically disabled when DB_HOST is set.
+      # DB_HOST: "your-postgres-host"
+      # DB_PORT: 5432
+      # DB_NAME: unifi_logs
+      # DB_USER: unifi
+      # DB_PASSWORD: "your_password"        # Database login — independent of POSTGRES_PASSWORD
+
     healthcheck:
-      test: ["CMD", "pg_isready", "-U", "unifi", "-d", "unifi_logs"]
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')\" || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5

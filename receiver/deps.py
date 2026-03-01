@@ -12,7 +12,7 @@ import time
 
 from psycopg2 import pool
 
-from db import Database
+from db import Database, get_db_connection_params
 from enrichment import AbuseIPDBEnricher
 from unifi_api import UniFiAPI
 
@@ -33,13 +33,7 @@ APP_VERSION = _read_version()
 
 # ── Database ─────────────────────────────────────────────────────────────────
 
-conn_params = {
-    'host': '127.0.0.1',
-    'port': 5432,
-    'dbname': 'unifi_logs',
-    'user': 'unifi',
-    'password': os.environ.get('POSTGRES_PASSWORD', 'changeme'),
-}
+conn_params = get_db_connection_params()
 
 db_pool = pool.ThreadedConnectionPool(2, 10, **conn_params)
 

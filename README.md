@@ -20,6 +20,7 @@ Single Docker container. No external dependencies. Zero data collection.
 - [📡 API Endpoints](#-api-endpoints)
 - [🔤 DNS Logging](#-dns-logging)
 - [🖧 Unraid Setup](#-unraid-setup)
+- [🐘 External PostgreSQL](#-external-postgresql)
 - [🧹 Database Maintenance](#-database-maintenance)
 - [🔧 Troubleshooting](#-troubleshooting)
 - [⚖️ Disclaimer](#-disclaimer)
@@ -121,7 +122,7 @@ services:
       - "514:514/udp"
       - "8090:8000"
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql/data   # Not needed if using external DB
       - ./maxmind:/app/maxmind
     environment:
       POSTGRES_PASSWORD: "your_strong_password_here"
@@ -132,8 +133,18 @@ services:
       TZ: "Europe/London"
       UNIFI_API_KEY: "your_unifi_api_key_here"
       UNIFI_HOST: "https://192.168.1.1"
+
+      # ── External PostgreSQL (optional) ─────────────────────────────
+      # Uncomment and set these to use your own PostgreSQL instance.
+      # The bundled database is automatically disabled when DB_HOST is set.
+      # DB_HOST: "your-postgres-host"
+      # DB_PORT: 5432
+      # DB_NAME: unifi_logs
+      # DB_USER: unifi
+      # DB_PASSWORD: "your_password"
+
     healthcheck:
-      test: ["CMD", "pg_isready", "-U", "unifi", "-d", "unifi_logs"]
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')\" || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -258,7 +269,12 @@ Everything runs inside a single Docker container, managed by supervisord:
 
 | Variable | Description |
 |---|---|
-| `POSTGRES_PASSWORD` | PostgreSQL password for the `unifi` user |
+| `POSTGRES_PASSWORD` | PostgreSQL password for the `unifi` user (also used as encryption key for stored API keys) |
+| `DB_HOST` | *(optional)* PostgreSQL hostname. Defaults to `127.0.0.1` (bundled). Set to an external host to disable the bundled database |
+| `DB_PORT` | *(optional)* PostgreSQL port. Defaults to `5432` |
+| `DB_NAME` | *(optional)* PostgreSQL database name. Defaults to `unifi_logs` |
+| `DB_USER` | *(optional)* PostgreSQL user. Defaults to `unifi` |
+| `DB_PASSWORD` | *(optional)* PostgreSQL password for the connection. Falls back to `POSTGRES_PASSWORD` if not set |
 | `ABUSEIPDB_API_KEY` | Enables threat scoring on blocked inbound IPs. Free tier: 1,000 check lookups/day + 5 blacklist pulls/day |
 | `MAXMIND_ACCOUNT_ID` | Enables GeoIP auto-update. Without it, manually place `.mmdb` files |
 | `MAXMIND_LICENSE_KEY` | Paired with account ID for auto-update |
@@ -613,6 +629,46 @@ Install directly from Unraid's Docker UI - no terminal needed.
 9. Configure your UniFi router's syslog to point at `<unraid-ip>:514`
 
 > **Updating:** Click the container's update icon in the Docker tab when a new version is available. Your database and configuration are preserved in the mapped volumes.
+
+---
+
+## 🐘 External PostgreSQL
+
+By default, UniFi Log Insight runs a bundled PostgreSQL instance inside the container. If you prefer to use your own dedicated PostgreSQL server, you can point the app at it via environment variables. When `DB_HOST` is set to anything other than `127.0.0.1` / `localhost`, the bundled database is automatically disabled.
+
+### Setup
+
+1. **Create the database and user** on your PostgreSQL instance:
+
+```sql
+CREATE USER unifi WITH PASSWORD 'your_password';
+CREATE DATABASE unifi_logs OWNER unifi;
+```
+
+2. **Apply the initial schema** (pick one):
+
+   - **Option A (recommended):** Do nothing — the app runs idempotent migrations on every boot and creates all tables automatically.
+   - **Option B:** Run the schema manually: `psql -h <host> -U unifi -d unifi_logs -f init.sql`
+
+3. **Uncomment the `DB_*` variables** in your `docker-compose.yml`:
+
+```yaml
+environment:
+  DB_HOST: "your-postgres-host"
+  DB_PORT: 5432
+  DB_NAME: unifi_logs
+  DB_USER: unifi
+  DB_PASSWORD: "your_password"
+  POSTGRES_PASSWORD: "your_encryption_secret"   # still needed for API-key encryption
+```
+
+### Important notes
+
+- **`POSTGRES_PASSWORD` is still required** even in external mode. It is used to derive the encryption key for stored UniFi API keys — it does NOT need to match `DB_PASSWORD`.
+- **Permissions:** The `DB_USER` needs `CREATE`, `ALTER`, `INSERT`, `SELECT`, `UPDATE`, `DELETE` privileges on the database. If the user owns the database (`OWNER unifi`), all privileges are automatic.
+- **Schema migrations** run automatically on every boot and are fully idempotent (`IF NOT EXISTS`). They work against any PostgreSQL 14+ instance.
+- **The `pgdata` volume** is not needed when using an external database. You can remove it from volumes.
+- **Health checks** use the app's HTTP endpoint (`/api/health`), which tests the full stack including database connectivity — no `pg_isready` dependency.
 
 ---
 

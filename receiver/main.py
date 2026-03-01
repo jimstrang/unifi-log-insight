@@ -21,7 +21,7 @@ import schedule
 
 from parsers import parse_log
 import parsers
-from db import Database, get_config, set_config
+from db import Database, get_config, set_config, get_db_connection_params
 from enrichment import Enricher
 from backfill import BackfillTask
 from blacklist import BlacklistFetcher
@@ -249,8 +249,13 @@ def run_scheduler(db: Database, enricher: Enricher, blacklist_fetcher: Blacklist
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
-def wait_for_postgres(conn_params: dict, max_retries: int = 30, delay: float = 2.0):
-    """Wait for PostgreSQL to be ready."""
+def wait_for_postgres(conn_params: dict, max_retries: int = 45, delay: float = 2.0):
+    """Wait for PostgreSQL to be ready.
+
+    Retries up to *max_retries* times with *delay* seconds between attempts.
+    The default 45 × 2 s = 90 s window accommodates external Postgres instances
+    that may need extra time to start (e.g. inside docker-compose depends_on).
+    """
     import psycopg2
     for i in range(max_retries):
         try:
@@ -266,14 +271,8 @@ def wait_for_postgres(conn_params: dict, max_retries: int = 30, delay: float = 2
 
 
 def main():
-    # Build connection params (safe for passwords with special chars)
-    conn_params = {
-        'host': '127.0.0.1',
-        'port': 5432,
-        'dbname': 'unifi_logs',
-        'user': 'unifi',
-        'password': os.environ.get('POSTGRES_PASSWORD', 'changeme'),
-    }
+    # Build connection params from env vars (supports external PostgreSQL)
+    conn_params = get_db_connection_params()
 
     # Wait for PostgreSQL
     wait_for_postgres(conn_params)

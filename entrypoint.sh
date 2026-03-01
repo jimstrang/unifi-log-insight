@@ -3,39 +3,50 @@ set -e
 
 PGDATA="/var/lib/postgresql/data"
 
-# Initialize PostgreSQL if data directory is empty
-if [ ! -s "$PGDATA/PG_VERSION" ]; then
-    echo "[entrypoint] Initializing PostgreSQL..."
-    chown -R postgres:postgres "$PGDATA"
-    su - postgres -c "/usr/lib/postgresql/16/bin/initdb -D $PGDATA"
+# ── Detect external vs bundled PostgreSQL ──────────────────────────────────
+# If DB_HOST is set and does NOT point to localhost, skip bundled Postgres.
+if [ -n "$DB_HOST" ] && [ "$DB_HOST" != "127.0.0.1" ] && [ "$DB_HOST" != "localhost" ] && [ "$DB_HOST" != "::1" ]; then
+    DISABLE_BUNDLED_PG=true
+    echo "[entrypoint] External PostgreSQL mode: connecting to ${DB_HOST}:${DB_PORT:-5432}"
+else
+    DISABLE_BUNDLED_PG=false
+    echo "[entrypoint] Bundled PostgreSQL mode"
+fi
 
-    # Start PostgreSQL temporarily to create database and schema
-    su - postgres -c "/usr/lib/postgresql/16/bin/pg_ctl -D $PGDATA -w start"
+# ── Bundled PostgreSQL initialisation ──────────────────────────────────────
+if [ "$DISABLE_BUNDLED_PG" = "false" ]; then
+    if [ ! -s "$PGDATA/PG_VERSION" ]; then
+        echo "[entrypoint] Initializing PostgreSQL..."
+        chown -R postgres:postgres "$PGDATA"
+        su - postgres -c "/usr/lib/postgresql/16/bin/initdb -D $PGDATA"
 
-    # Create user and database
-    su - postgres -c "psql -c \"CREATE USER unifi WITH PASSWORD '${POSTGRES_PASSWORD}';\""
-    su - postgres -c "psql -c \"CREATE DATABASE unifi_logs OWNER unifi;\""
-    su - postgres -c "psql -d unifi_logs -f /app/init.sql"
-    su - postgres -c "psql -d unifi_logs -c \"GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO unifi;\""
-    su - postgres -c "psql -d unifi_logs -c \"GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO unifi;\""
+        # Start PostgreSQL temporarily to create database and schema
+        su - postgres -c "/usr/lib/postgresql/16/bin/pg_ctl -D $PGDATA -w start"
 
-    # Transfer table ownership so the unifi user can run ALTER TABLE migrations
-    su - postgres -c "psql -d unifi_logs -c \"ALTER TABLE logs OWNER TO unifi;\""
-    su - postgres -c "psql -d unifi_logs -c \"ALTER TABLE ip_threats OWNER TO unifi;\""
-    su - postgres -c "psql -d unifi_logs -c \"ALTER SEQUENCE logs_id_seq OWNER TO unifi;\""
-    su - postgres -c "psql -d unifi_logs -c \"ALTER FUNCTION cleanup_old_logs(INTEGER, INTEGER) OWNER TO unifi;\""
+        # Create user and database
+        su - postgres -c "psql -c \"CREATE USER unifi WITH PASSWORD '${POSTGRES_PASSWORD}';\""
+        su - postgres -c "psql -c \"CREATE DATABASE unifi_logs OWNER unifi;\""
+        su - postgres -c "psql -d unifi_logs -f /app/init.sql"
+        su - postgres -c "psql -d unifi_logs -c \"GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO unifi;\""
+        su - postgres -c "psql -d unifi_logs -c \"GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO unifi;\""
 
-    # Defensive: transfer ownership of app-created tables if they exist
-    su - postgres -c "psql -d unifi_logs -c \"DO \\\$\\\$ BEGIN IF EXISTS (SELECT 1 FROM pg_tables WHERE tablename='system_config') THEN ALTER TABLE system_config OWNER TO unifi; END IF; END \\\$\\\$;\""
-    su - postgres -c "psql -d unifi_logs -c \"DO \\\$\\\$ BEGIN IF EXISTS (SELECT 1 FROM pg_tables WHERE tablename='unifi_clients') THEN ALTER TABLE unifi_clients OWNER TO unifi; END IF; END \\\$\\\$;\""
-    su - postgres -c "psql -d unifi_logs -c \"DO \\\$\\\$ BEGIN IF EXISTS (SELECT 1 FROM pg_tables WHERE tablename='unifi_devices') THEN ALTER TABLE unifi_devices OWNER TO unifi; END IF; END \\\$\\\$;\""
+        # Transfer table ownership so the unifi user can run ALTER TABLE migrations
+        su - postgres -c "psql -d unifi_logs -c \"ALTER TABLE logs OWNER TO unifi;\""
+        su - postgres -c "psql -d unifi_logs -c \"ALTER TABLE ip_threats OWNER TO unifi;\""
+        su - postgres -c "psql -d unifi_logs -c \"ALTER SEQUENCE logs_id_seq OWNER TO unifi;\""
+        su - postgres -c "psql -d unifi_logs -c \"ALTER FUNCTION cleanup_old_logs(INTEGER, INTEGER) OWNER TO unifi;\""
 
-    # Configure PostgreSQL to accept connections from the app
-    echo "host all all 127.0.0.1/32 md5" >> "$PGDATA/pg_hba.conf"
-    echo "local all all trust" >> "$PGDATA/pg_hba.conf"
+        # Defensive: transfer ownership of app-created tables if they exist
+        su - postgres -c "psql -d unifi_logs -c \"DO \\\$\\\$ BEGIN IF EXISTS (SELECT 1 FROM pg_tables WHERE tablename='system_config') THEN ALTER TABLE system_config OWNER TO unifi; END IF; END \\\$\\\$;\""
+        su - postgres -c "psql -d unifi_logs -c \"DO \\\$\\\$ BEGIN IF EXISTS (SELECT 1 FROM pg_tables WHERE tablename='unifi_clients') THEN ALTER TABLE unifi_clients OWNER TO unifi; END IF; END \\\$\\\$;\""
+        su - postgres -c "psql -d unifi_logs -c \"DO \\\$\\\$ BEGIN IF EXISTS (SELECT 1 FROM pg_tables WHERE tablename='unifi_devices') THEN ALTER TABLE unifi_devices OWNER TO unifi; END IF; END \\\$\\\$;\""
 
-    # Tune for logging workload
-    cat >> "$PGDATA/postgresql.conf" <<EOF
+        # Configure PostgreSQL to accept connections from the app
+        echo "host all all 127.0.0.1/32 md5" >> "$PGDATA/pg_hba.conf"
+        echo "local all all trust" >> "$PGDATA/pg_hba.conf"
+
+        # Tune for logging workload
+        cat >> "$PGDATA/postgresql.conf" <<EOF
 
 # UniFi Log Insight tuning
 listen_addresses = '127.0.0.1'
@@ -49,12 +60,34 @@ max_wal_size = 512MB
 synchronous_commit = off
 EOF
 
-    su - postgres -c "/usr/lib/postgresql/16/bin/pg_ctl -D $PGDATA -w stop"
-    echo "[entrypoint] PostgreSQL initialized."
+        su - postgres -c "/usr/lib/postgresql/16/bin/pg_ctl -D $PGDATA -w stop"
+        echo "[entrypoint] PostgreSQL initialized."
+    else
+        echo "[entrypoint] PostgreSQL data directory exists, skipping init."
+        chown -R postgres:postgres "$PGDATA"
+    fi
 else
-    echo "[entrypoint] PostgreSQL data directory exists, skipping init."
-    chown -R postgres:postgres "$PGDATA"
+    echo "[entrypoint] Skipping bundled PostgreSQL setup (external mode)."
+fi
 
+# ── Generate supervisord config ───────────────────────────────────────────
+# Conditionally include/exclude the bundled PostgreSQL program.
+SUPERVISORD_CONF="/etc/supervisor/conf.d/supervisord.conf"
+if [ "$DISABLE_BUNDLED_PG" = "true" ]; then
+    echo "[entrypoint] Disabling bundled PostgreSQL in supervisord..."
+    # Disable only the postgresql program block
+    python3 -c "
+import re, sys
+conf = open('$SUPERVISORD_CONF').read()
+conf = re.sub(
+    r'(\[program:postgresql\].*?autostart=)true',
+    r'\1false',
+    conf,
+    count=1,
+    flags=re.DOTALL
+)
+open('$SUPERVISORD_CONF', 'w').write(conf)
+"
 fi
 
 echo "[entrypoint] Starting services via supervisord..."

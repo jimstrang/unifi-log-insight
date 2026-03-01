@@ -57,6 +57,32 @@ def decrypt_api_key(encrypted: str) -> str:
         logger.warning("Failed to decrypt API key (POSTGRES_PASSWORD may have changed): %s", e)
         return ''
 
+# ── Connection Parameter Builder ───────────────────────────────────────────────
+
+def get_db_connection_params() -> dict:
+    """Build PostgreSQL connection parameters from environment variables.
+
+    If DB_HOST / DB_PORT / DB_NAME / DB_USER / DB_PASSWORD are set, those
+    values are used (external PostgreSQL mode).  Otherwise the defaults
+    match the bundled-Postgres configuration so existing installs keep
+    working without any changes.
+    """
+    return {
+        'host': os.environ.get('DB_HOST', '127.0.0.1'),
+        'port': int(os.environ.get('DB_PORT', '5432')),
+        'dbname': os.environ.get('DB_NAME', 'unifi_logs'),
+        'user': os.environ.get('DB_USER', 'unifi'),
+        'password': os.environ.get('DB_PASSWORD',
+                                   os.environ.get('POSTGRES_PASSWORD', 'changeme')),
+    }
+
+
+def is_external_db() -> bool:
+    """Return True when the user has pointed the app at an external database."""
+    host = os.environ.get('DB_HOST', '127.0.0.1')
+    return host not in ('127.0.0.1', 'localhost', '::1', '')
+
+
 # Column names matching the logs table
 INSERT_COLUMNS = [
     'timestamp', 'log_type', 'direction',
@@ -86,13 +112,7 @@ class Database:
     """PostgreSQL connection pool and operations."""
 
     def __init__(self, conn_params: dict | None = None, min_conn: int = 2, max_conn: int = 10):
-        self.conn_params = conn_params or {
-            'host': '127.0.0.1',
-            'port': 5432,
-            'dbname': 'unifi_logs',
-            'user': 'unifi',
-            'password': os.environ.get('POSTGRES_PASSWORD', 'changeme'),
-        }
+        self.conn_params = conn_params or get_db_connection_params()
         self.pool = None
         self.min_conn = min_conn
         self.max_conn = max_conn
