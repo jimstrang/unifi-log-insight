@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react'
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { fetchStats } from '../api'
-import { formatNumber, FlagIcon, decodeThreatCategories, LOG_TYPE_STYLES, timeRangeToDays, filterVisibleRanges } from '../utils'
-
-const TIME_RANGES = ['1h', '6h', '24h', '7d', '30d', '60d', '90d', '180d', '365d']
+import { formatNumber, FlagIcon, decodeThreatCategories, LOG_TYPE_STYLES } from '../utils'
+import useTimeRange from '../hooks/useTimeRange'
 
 export function DashboardSkeleton() {
   return (
@@ -232,24 +231,9 @@ function TopList({ title, items, renderItem }) {
 }
 
 export default function Dashboard({ maxFilterDays }) {
-  const [timeRange, setTimeRange] = useState('24h')
+  const [timeRange, setTimeRange, visibleRanges] = useTimeRange(maxFilterDays)
   const [stats, setStats] = useState(null)
   const [loading, setLoading] = useState(true)
-
-  const visibleRanges = filterVisibleRanges(TIME_RANGES, maxFilterDays)
-
-  // Auto-correct selected range if it exceeds maxFilterDays
-  useEffect(() => {
-    if (!maxFilterDays) return
-    const currentDays = timeRangeToDays(timeRange)
-    if (currentDays >= 1 && currentDays > maxFilterDays) {
-      const largest = [...TIME_RANGES].reverse().find(tr => {
-        const d = timeRangeToDays(tr)
-        return d < 1 || d <= maxFilterDays
-      })
-      if (largest) setTimeRange(largest)
-    }
-  }, [maxFilterDays]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     let mounted = true

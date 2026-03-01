@@ -141,18 +141,33 @@ def build_log_query(
         negated, val = _parse_negation(rule_action)
         actions = [a.strip() for a in val.split(',')]
         placeholders = ','.join(['%s'] * len(actions))
-        keyword = "NOT IN" if negated else "IN"
-        conditions.append(f"rule_action {keyword} ({placeholders})")
+        if negated:
+            conditions.append(f"(rule_action NOT IN ({placeholders}) OR rule_action IS NULL)")
+        else:
+            conditions.append(f"rule_action IN ({placeholders})")
         params.extend(actions)
 
     if rule_name:
         negated, val = _parse_negation(rule_name)
         escaped = _escape_like(val)
+        # The UI adds a space after ']' for display (e.g. "[WAN_LOCAL] Allow All Traffic")
+        # but the DB stores it without the space ("[WAN_LOCAL]Allow All Traffic").
+        # Normalize by also trying the value with '] ' collapsed to ']'.
+        escaped_norm = _escape_like(val.replace('] ', ']'))
         if negated:
-            conditions.append("(rule_name NOT ILIKE %s ESCAPE '\\' OR rule_name IS NULL) AND (rule_desc NOT ILIKE %s ESCAPE '\\' OR rule_desc IS NULL)")
+            conditions.append(
+                "(rule_name NOT ILIKE %s ESCAPE '\\' OR rule_name IS NULL)"
+                " AND (rule_desc NOT ILIKE %s ESCAPE '\\' OR rule_desc IS NULL)"
+                " AND (rule_desc NOT ILIKE %s ESCAPE '\\' OR rule_desc IS NULL)"
+            )
+            params.extend([f"%{escaped}%", f"%{escaped}%", f"%{escaped_norm}%"])
         else:
-            conditions.append("(rule_name ILIKE %s ESCAPE '\\' OR rule_desc ILIKE %s ESCAPE '\\')")
-        params.extend([f"%{escaped}%", f"%{escaped}%"])
+            conditions.append(
+                "(rule_name ILIKE %s ESCAPE '\\'"
+                " OR rule_desc ILIKE %s ESCAPE '\\'"
+                " OR rule_desc ILIKE %s ESCAPE '\\')"
+            )
+            params.extend([f"%{escaped}%", f"%{escaped}%", f"%{escaped_norm}%"])
 
     if country:
         negated, val = _parse_negation(country)
@@ -224,10 +239,10 @@ def build_log_query(
 
     if protocol:
         negated, val = _parse_negation(protocol)
-        protocols = [p.strip().upper() for p in val.split(',')]
+        protocols = [p.strip().lower() for p in val.split(',')]
         placeholders = ','.join(['%s'] * len(protocols))
         keyword = "NOT IN" if negated else "IN"
-        condition = f"protocol {keyword} ({placeholders})"
+        condition = f"LOWER(protocol) {keyword} ({placeholders})"
         if negated:
             condition = f"({condition} OR protocol IS NULL)"
         conditions.append(condition)
