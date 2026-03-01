@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { fetchLogs, fetchLog, getExportUrl, fetchUiSettings } from '../api'
+import { TR_KEY } from '../utils'
 import FilterBar from './FilterBar'
 import LogTable from './LogTable'
 import Pagination from './Pagination'
@@ -18,6 +19,8 @@ const DEFAULT_FILTERS = {
   dst_port: null,
   src_port: null,
   protocol: null,
+  time_from: null,
+  time_to: null,
   page: 1,
   per_page: 50,
   sort: 'timestamp',
@@ -42,6 +45,7 @@ export default function LogStream({ version, latestRelease, maxFilterDays }) {
   const [filters, setFilters] = useState(() => {
     const restored = { ...DEFAULT_FILTERS }
     try {
+      restored.time_range = sessionStorage.getItem(TR_KEY) || '24h'
       const savedTypes = localStorage.getItem(STORAGE_KEY)
       if (savedTypes) restored.log_type = savedTypes
       const savedAction = localStorage.getItem(ACTION_STORAGE_KEY)
@@ -212,6 +216,11 @@ export default function LogStream({ version, latestRelease, maxFilterDays }) {
     setExpandedId(null)
     setPendingCount(0)
     setFilters({ ...newFilters, page: 1 })
+    // Persist time range within this session (shared across views via sessionStorage)
+    try {
+      if (newFilters.time_range) sessionStorage.setItem(TR_KEY, newFilters.time_range)
+      else sessionStorage.removeItem(TR_KEY)
+    } catch (e) { /* private browsing */ }
   }
 
   const handlePageChange = (page) => {

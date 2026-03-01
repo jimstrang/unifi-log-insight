@@ -151,8 +151,12 @@ export const DIRECTION_COLORS = {
   vpn: 'text-teal-400',
 }
 
+// sessionStorage key for persisting time range across views
+export const TR_KEY = 'unifi-log-insight:time-range'
+
 // Convert time range string (e.g. '7d', '24h') to days
 export function timeRangeToDays(value) {
+  if (!value) return 0
   const match = value.match(/^(\d+)([hd])$/)
   if (!match) return 0
   const num = parseInt(match[1], 10)

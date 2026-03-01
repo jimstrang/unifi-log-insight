@@ -3,12 +3,11 @@ import maplibregl from 'maplibre-gl'
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-csp-worker?url'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { fetchThreatGeo } from '../api'
-import { formatNumber, filterVisibleRanges, timeRangeToDays } from '../utils'
+import { formatNumber } from '../utils'
+import useTimeRange from '../hooks/useTimeRange'
 import ThreatSidebar from './ThreatSidebar'
 
 maplibregl.setWorkerUrl(maplibreWorkerUrl)
-
-const TIME_RANGES = ['1h', '6h', '24h', '7d', '30d', '60d', '90d', '180d', '365d']
 
 const MODES = [
   { id: 'threats', label: 'Threats' },
@@ -210,12 +209,13 @@ export default function ThreatMap({ maxFilterDays, flyTo, onFlyToDone }) {
   const mapContainer = useRef(null)
   const mapRef = useRef(null)
   const flyToMarkerRef = useRef(null)
-  const [timeRange, setTimeRange] = useState('24h')
+  const [timeRange, setTimeRange, visibleRanges] = useTimeRange(maxFilterDays)
   const [mode, setMode] = useState('threats')
   const [view, setView] = useState('heatmap')
   const [geoData, setGeoData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [sidebarLocation, setSidebarLocation] = useState(null)
+  const [hasFlyToMarker, setHasFlyToMarker] = useState(false)
 
   const closeSidebar = useCallback(() => setSidebarLocation(null), [])
 
@@ -224,21 +224,6 @@ export default function ThreatMap({ maxFilterDays, flyTo, onFlyToDone }) {
   const geoDataRef = useRef(geoData)
   viewRef.current = view
   geoDataRef.current = geoData
-
-  const visibleRanges = filterVisibleRanges(TIME_RANGES, maxFilterDays)
-
-  // Auto-correct selected range if it exceeds maxFilterDays
-  useEffect(() => {
-    if (!maxFilterDays) return
-    const currentDays = timeRangeToDays(timeRange)
-    if (currentDays >= 1 && currentDays > maxFilterDays) {
-      const largest = [...TIME_RANGES].reverse().find(tr => {
-        const d = timeRangeToDays(tr)
-        return d < 1 || d <= maxFilterDays
-      })
-      if (largest) setTimeRange(largest)
-    }
-  }, [maxFilterDays]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch geo data
   useEffect(() => {
@@ -395,6 +380,7 @@ export default function ThreatMap({ maxFilterDays, flyTo, onFlyToDone }) {
     if (flyToMarkerRef.current) {
       flyToMarkerRef.current.remove()
       flyToMarkerRef.current = null
+      setHasFlyToMarker(false)
     }
 
     // Create pulsing marker element
@@ -444,6 +430,7 @@ export default function ThreatMap({ maxFilterDays, flyTo, onFlyToDone }) {
       .addTo(map)
 
     flyToMarkerRef.current = marker
+    setHasFlyToMarker(true)
 
     map.flyTo({ center: [flyTo.lon, flyTo.lat], zoom: 8, duration: 1500 })
 
@@ -548,7 +535,7 @@ export default function ThreatMap({ maxFilterDays, flyTo, onFlyToDone }) {
           <div ref={mapContainer} className="absolute inset-0" />
 
           {/* Empty state */}
-          {!loading && geoData?.features?.length === 0 && (
+          {!loading && geoData?.features?.length === 0 && !hasFlyToMarker && (
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
               <div className="bg-gray-950/80 border border-gray-800 rounded-lg px-6 py-4 text-center">
                 <div className="text-gray-400 text-sm">No geo data available</div>
