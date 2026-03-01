@@ -282,7 +282,11 @@ class Database:
         a function it doesn't own (fixes #24).  We connect as postgres via the
         local Unix socket (pg_hba.conf: local all all trust) to run the ALTER,
         then gate it so it only runs once.
+
+        Skipped in external-DB mode — the user is responsible for ownership.
         """
+        if is_external_db():
+            return
         try:
             if self.get_config('fn_ownership_fixed'):
                 return

@@ -21,7 +21,7 @@ import schedule
 
 from parsers import parse_log
 import parsers
-from db import Database, get_config, set_config, get_db_connection_params
+from db import Database, get_config, set_config, get_db_connection_params, is_external_db
 from enrichment import Enricher
 from backfill import BackfillTask
 from blacklist import BlacklistFetcher
@@ -266,13 +266,19 @@ def wait_for_postgres(conn_params: dict, max_retries: int = 45, delay: float = 2
         except psycopg2.OperationalError:
             logger.debug("Waiting for PostgreSQL... (%d/%d)", i + 1, max_retries)
             time.sleep(delay)
-    logger.error("PostgreSQL not available after %d retries", max_retries)
+    logger.error("PostgreSQL not available after %d retries — target was %s@%s:%s/%s",
+                  max_retries, conn_params.get('user'), conn_params.get('host'),
+                  conn_params.get('port'), conn_params.get('dbname'))
     sys.exit(1)
 
 
 def main():
     # Build connection params from env vars (supports external PostgreSQL)
     conn_params = get_db_connection_params()
+    logger.info("Database target: %s@%s:%s/%s%s",
+                conn_params['user'], conn_params['host'],
+                conn_params['port'], conn_params['dbname'],
+                " (external)" if is_external_db() else " (bundled)")
 
     # Wait for PostgreSQL
     wait_for_postgres(conn_params)

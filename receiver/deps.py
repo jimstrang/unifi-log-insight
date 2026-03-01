@@ -12,7 +12,7 @@ import time
 
 from psycopg2 import pool
 
-from db import Database, get_db_connection_params
+from db import Database, get_db_connection_params, is_external_db
 from enrichment import AbuseIPDBEnricher
 from unifi_api import UniFiAPI
 
@@ -34,6 +34,10 @@ APP_VERSION = _read_version()
 # ── Database ─────────────────────────────────────────────────────────────────
 
 conn_params = get_db_connection_params()
+logger.info("API database target: %s@%s:%s/%s%s",
+            conn_params['user'], conn_params['host'],
+            conn_params['port'], conn_params['dbname'],
+            " (external)" if is_external_db() else " (bundled)")
 
 db_pool = pool.ThreadedConnectionPool(2, 10, **conn_params)
 

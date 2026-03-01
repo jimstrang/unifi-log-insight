@@ -638,7 +638,7 @@ By default, UniFi Log Insight runs a bundled PostgreSQL instance inside the cont
 
 ### Setup
 
-1. **Create the database and user** on your PostgreSQL instance:
+1. **Create the database and user** on your PostgreSQL instance (replace `unifi` / `unifi_logs` with your preferred names — just keep them consistent with the `DB_*` variables below):
 
 ```sql
 CREATE USER unifi WITH PASSWORD 'your_password';
@@ -664,8 +664,9 @@ environment:
 
 ### Important notes
 
+- **External mode detection:** Any `DB_HOST` value that isn't `127.0.0.1`, `localhost`, or `::1` triggers external mode — the bundled PostgreSQL is fully disabled and all connections use the `DB_*` variables.
 - **`POSTGRES_PASSWORD` is still required** even in external mode. It is used to derive the encryption key for stored UniFi API keys — it does NOT need to match `DB_PASSWORD`.
-- **Permissions:** The `DB_USER` needs `CREATE`, `ALTER`, `INSERT`, `SELECT`, `UPDATE`, `DELETE` privileges on the database. If the user owns the database (`OWNER unifi`), all privileges are automatic.
+- **Permissions:** The `DB_USER` needs `CREATE`, `ALTER`, `INSERT`, `SELECT`, `UPDATE`, `DELETE` privileges on the database. If the user owns the database (e.g. `OWNER unifi`), all privileges are automatic.
 - **Schema migrations** run automatically on every boot and are fully idempotent (`IF NOT EXISTS`). They work against any PostgreSQL 14+ instance.
 - **The `pgdata` volume** is not needed when using an external database. You can remove it from volumes.
 - **Health checks** use the app's HTTP endpoint (`/api/health`), which tests the full stack including database connectivity — no `pg_isready` dependency.

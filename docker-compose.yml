@@ -27,7 +27,8 @@ services:
 
       # ── External PostgreSQL (optional) ─────────────────────────────
       # Uncomment and set these to use your own PostgreSQL instance.
-      # The bundled database is automatically disabled when DB_HOST is set.
+      # Any DB_HOST that isn't 127.0.0.1 / localhost / ::1 triggers
+      # external mode — the bundled PostgreSQL is fully disabled.
       # DB_HOST: "your-postgres-host"
       # DB_PORT: 5432
       # DB_NAME: unifi_logs
